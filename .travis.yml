@@ -1,0 +1,22 @@
+language: cpp
+before_script:
+- sudo apt-get install libboost-test-dev -y
+- sudo apt-get install libboost-timer-dev -y
+- sudo apt-get install libboost-system-dev -y
+- sudo apt-get install libboost-coroutine-dev -y
+- sudo apt-get install libboost-context-dev -y
+- sudo apt-get install libboost-thread-dev -y
+- echo "deb http://archive.ubuntu.com/ubuntu xenial main universe" | sudo tee -a /etc/apt/sources.list
+- sudo apt-get update -qq
+- sudo apt-get install libspdlog-dev -y
+script:
+- mkdir bin
+- cd bin
+- cmake ../src
+- make all
+- make test
+- make package
+deploy:
+  provider: script
+  skip_cleanup: true
+  script: curl -T join_server-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb -umadmazoku:$BINTRAY_API_KEY "https://api.bintray.com/content/madmazoku/otus.lessons/26.01/$TRAVIS_BUILD_NUMBER/join_server-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb;deb_distribution=trusty;deb_component=main;deb_architecture=amd64;publish=1"

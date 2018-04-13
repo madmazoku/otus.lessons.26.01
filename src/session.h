@@ -4,11 +4,11 @@
 #include <exception>
 #include <algorithm>
 #include <iterator>
-#include <regex>
 #include <array>
 #include <vector>
 
 #include <boost/asio/spawn.hpp>
+#include <boost/tokenizer.hpp>
 
 #include "metrics.h"
 
@@ -124,11 +124,11 @@ private:
             std::cout << "'" << std::endl;
         }
 
-        std::regex ws_re("\\s+");
         std::vector<std::string> tokens;
-        std::copy( std::sregex_token_iterator(_data.cbegin() + start, _data.cbegin() + start + length - 1, ws_re, -1),
-                   std::sregex_token_iterator(),
-                   std::back_inserter(tokens));
+
+        boost::char_separator<char> sep{" \n"};
+        boost::tokenizer<boost::char_separator<char>> tok{_data.cbegin() + start, _data.cbegin() + start + length, sep};
+        std::copy( tok.begin(), tok.end(), std::back_inserter(tokens) );
 
         std::string response;
         if(tokens[0] == "INSERT") {

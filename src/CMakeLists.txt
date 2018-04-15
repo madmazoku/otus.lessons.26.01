@@ -36,7 +36,11 @@ enable_testing()
 configure_file(in.version.h version.h)
 
 add_executable(join_server server.cpp)
+
 add_executable(join_test test.cpp)
+
+add_definitions(-DBOOST_COROUTINES_NO_DEPRECATION_WARNING)
+add_definitions(-DBOOST_COROUTINE_NO_DEPRECATION_WARNING)
 
 set_target_properties(join_server join_test PROPERTIES
     CXX_STANDARD 14

@@ -9,6 +9,7 @@
 
 #include <boost/asio/spawn.hpp>
 #include <boost/tokenizer.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include "metrics.h"
 
@@ -131,44 +132,164 @@ private:
         std::copy( tok.begin(), tok.end(), std::back_inserter(tokens) );
 
         std::string response;
-        if(tokens[0] == "INSERT") {
-            _m.update("session.inserts", 1);
-            _m.update("session."+tokens[1]+".inserts", 1);
-            std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
-            size_t id = std::stoull(tokens[2]);
-            auto f = r.find(id);
-            if(f == r.end()) {
-                r[id] = tokens[3];
-                response = "OK";
-            } else
-                response = "ERR duplicate " + std::to_string(id);
-        } else if(tokens[0] == "TRUNCATE") {
-            _m.update("session.truncates", 1);
-            _m.update("session."+tokens[1]+".truncates", 1);
-            std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
-            r.clear();
-            response = "OK";
-        } else if(tokens[0] == "INTERSECTION") {
-            _m.update("session.intersections", 1);
-            cross(CrossType::INTERSECTION, yield);
-            response = "OK";
-        } else if(tokens[0] == "SYMMETRIC_DIFFERENCE") {
-            _m.update("session.symmetric_differencies", 1);
-            cross(CrossType::SYMMETRIC_DIFFERENCE, yield);
-            response = "OK";
-        } else if(tokens[0] == "DUMP") {
-            _m.update("session.dumps", 1);
-            _m.update("session."+tokens[1]+".dumps", 1);
-            std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
-            dump(r, yield);
-            response = "OK";
+        if(tokens.empty()) {
+            _m.update("session.errors.empty", 1);
+            response = "ERR no command";
         } else {
-            _m.update("session.unknowns", 1);
-            response = "ERR unknown command: " + tokens[0];
+            boost::to_upper(tokens[0]);
+            if(tokens[0] == "INSERT") {
+                response = validate_insert(tokens);
+                if(response.empty()) {
+                    std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
+                    size_t id = std::stoull(tokens[2]);
+                    auto f = r.find(id);
+                    if(f == r.end()) {
+                        r[id] = tokens[3];
+                        _m.update("session.inserts", 1);
+                        _m.update("session."+tokens[1]+".inserts", 1);
+                        response = "OK";
+                    } else {
+                        _m.update("session.errors.insert", 1);
+                        response = "ERR duplicate " + std::to_string(id);
+                    }
+                } else
+                    _m.update("session.errors.insert", 1);
+            } else if(tokens[0] == "TRUNCATE") {
+                response = validate_truncate(tokens);
+                if(response.empty()) {
+                    _m.update("session.truncates", 1);
+                    _m.update("session."+tokens[1]+".truncates", 1);
+                    std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
+                    r.clear();
+                    response = "OK";
+                } else
+                    _m.update("session.errors.insert", 1);
+            } else if(tokens[0] == "INTERSECTION") {
+                _m.update("session.intersections", 1);
+                cross(CrossType::INTERSECTION, yield);
+                response = "OK";
+            } else if(tokens[0] == "SYMMETRIC_DIFFERENCE") {
+                _m.update("session.symmetric_differencies", 1);
+                cross(CrossType::SYMMETRIC_DIFFERENCE, yield);
+                response = "OK";
+            } else if(tokens[0] == "DUMP") {
+                response = validate_dump(tokens);
+                if(response.empty()) {
+                    _m.update("session.dumps", 1);
+                    _m.update("session."+tokens[1]+".dumps", 1);
+                    std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
+                    dump(r, yield);
+                    response = "OK";
+                } else
+                    _m.update("session.errors.dump", 1);
+            } else if(tokens[0] == "REMOVE") {
+                response = validate_remove(tokens);
+                if(response.empty()) {
+                    std::map<size_t, std::string>& r = tokens[1] == "A" ?  _a : _b;
+                    size_t id = std::stoull(tokens[2]);
+                    auto f = r.find(id);
+                    if(f != r.end()) {
+                        r.erase(f);
+                        _m.update("session.removes", 1);
+                        _m.update("session."+tokens[1]+".removes", 1);
+                        response = "OK";
+                    } else {
+                        _m.update("session.errors.remove", 1);
+                        response = "ERR absent " + std::to_string(id);
+                    }
+                } else
+                    _m.update("session.errors.insert", 1);
+            } else if(tokens[0] == "HELP") {
+                response = "INSERT table id desc - insert record {id, desc} to table, where table may be 'A' or 'B', id must be positive number and desc is a string\n";
+                response += "TRUNCATE table - remove all records from table, where table may be 'A' or 'B'\n";
+                response += "INTERSECTION - print records which id present in both tables 'A' and 'B'\n";
+                response += "SYMMETRIC_DIFFERENCE - print records which id present only in one table - 'A' or 'B'\n";
+                response += "DUMP table - print content of table, where table may be 'A' or 'B'\n";
+                response += "REMOVE table id - remove existing record with id from table, where table may be 'A' or 'B' and id must be positive number\n";
+                response += "HELP print this text\n";
+            } else {
+                _m.update("session.errors.unknown", 1);
+                response = "ERR unknown command";
+            }
         }
 
         response += "\n";
         boost::asio::async_write(_socket, boost::asio::buffer(response, response.length()), yield);
+    }
+
+    void to_upper(std::vector<std::string>& tokens, size_t n)
+    {
+        std::string r;
+        r.reserve(tokens[n].size());
+        for(auto c : tokens[n])
+            r.push_back(std::toupper(c));
+        tokens[n] = r;
+    }
+
+    bool is_num(const std::string& s)
+    {
+        if(s.empty())
+            return false;
+        for(auto c : s)
+            if(!std::isdigit(c))
+                return false;
+        return true;
+    }
+
+    std::string validate_insert(std::vector<std::string>& tokens)
+    {
+        std::string response;
+        if(tokens.size() < 4)
+            response = "ERR not enough arguments for insert";
+        else {
+            boost::to_upper(tokens[1]);
+            if(tokens[1] != "A" && tokens[1] != "B")
+                response = "ERR table may be 'A' or 'B' only";
+            else if(!is_num(tokens[2]))
+                response = "ERR id must be number";
+        }
+        return std::move(response);
+    }
+
+    std::string validate_truncate(std::vector<std::string>& tokens)
+    {
+        std::string response;
+        if(tokens.size() < 2)
+            response = "ERR not enough arguments for truncate";
+        else {
+            boost::to_upper(tokens[1]);
+            if(tokens[1] != "A" && tokens[1] != "B")
+                response = "ERR table may be 'A' or 'B' only";
+        }
+        return std::move(response);
+    }
+
+    std::string validate_dump(std::vector<std::string>& tokens)
+    {
+        std::string response;
+        if(tokens.size() < 2)
+            response = "ERR not enough arguments for dump";
+        else {
+            boost::to_upper(tokens[1]);
+            if(tokens[1] != "A" && tokens[1] != "B")
+                response = "ERR table may be 'A' or 'B' only";
+        }
+        return std::move(response);
+    }
+
+    std::string validate_remove(std::vector<std::string>& tokens)
+    {
+        std::string response;
+        if(tokens.size() < 3)
+            response = "ERR not enough arguments for remove";
+        else {
+            boost::to_upper(tokens[1]);
+            if(tokens[1] != "A" && tokens[1] != "B")
+                response = "ERR table may be 'A' or 'B' only";
+            else if(!is_num(tokens[2]))
+                response = "ERR id must be number";
+        }
+        return std::move(response);
     }
 
     void process_data(boost::asio::yield_context& yield)

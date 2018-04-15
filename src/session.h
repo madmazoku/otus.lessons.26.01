@@ -129,13 +129,13 @@ public:
     {
         _m.update("session.count", 1);
 
-        add_command(std::make_unique<CInsert>(_s));
-        add_command(std::make_unique<CTruncate>(_s));
-        add_command(std::make_unique<CCIntersection>(_s));
-        add_command(std::make_unique<CCSymmetricDifference>(_s));
-        add_command(std::make_unique<CRemove>(_s));
-        add_command(std::make_unique<CDump>(_s));
-        add_command(std::make_unique<CHelp>(_s));
+        add_command(make_unique<CInsert>(_s));
+        add_command(make_unique<CTruncate>(_s));
+        add_command(make_unique<CCIntersection>(_s));
+        add_command(make_unique<CCSymmetricDifference>(_s));
+        add_command(make_unique<CRemove>(_s));
+        add_command(make_unique<CDump>(_s));
+        add_command(make_unique<CHelp>(_s));
 
         boost::system::error_code ec;
         _remote = std::move(_socket.remote_endpoint(ec));
